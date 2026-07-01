@@ -74,6 +74,7 @@ async function monitor() {
     }
 }
 
-sendDiscord("✅ **Kick notifier started**");
+// Send test message immediately + start monitoring
+sendDiscord("✅ **Kick notifier started and running**");
 monitor();
 setInterval(monitor, CONFIG.checkInterval * 1000);
