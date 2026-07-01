@@ -4,10 +4,8 @@ const http = require('http');
 const CONFIG = {
     discordWebhook: 'https://discord.com/api/webhooks/1521688375160078418/_3L6Tb_9wzs2hZxf3gRoAGBaHyYLQrTng6fD2tyR6l8SMsSv5C2BZKuAJnmKXP47jmcR',
     streamers: ['maplesyrupy'],
-    checkInterval: 30
+    checkInterval: 60 
 };
-
-let liveStreamers = new Set();
 
 http.createServer((req, res) => {
     res.writeHead(200);
@@ -26,12 +24,14 @@ async function sendDiscord(message) {
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(data)
             }
-        }, (res) => resolve());
+        }, () => resolve());
         req.on('error', () => resolve());
         req.write(data);
         req.end();
     });
 }
+
+const seenLive = new Set();
 
 async function checkKick(username) {
     return new Promise((resolve) => {
@@ -39,7 +39,10 @@ async function checkKick(username) {
             hostname: 'kick.com',
             path: `/api/v2/channels/${username}`,
             method: 'GET',
-            headers: { 'User-Agent': 'Mozilla/5.0' }
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json'
+            }
         };
         const req = https.request(options, (res) => {
             let body = '';
@@ -47,8 +50,7 @@ async function checkKick(username) {
             res.on('end', () => {
                 try {
                     const data = JSON.parse(body);
-                    const isLive = !!data.livestream?.is_live;
-                    resolve(isLive);
+                    resolve(data?.data?.livestream?.is_live ?? false);
                 } catch {
                     resolve(false);
                 }
@@ -62,19 +64,14 @@ async function checkKick(username) {
 async function monitor() {
     for (const user of CONFIG.streamers) {
         const live = await checkKick(user);
-        if (live) {
-            if (!liveStreamers.has(user)) {
-                await sendDiscord(`<@&1521689981939089449> 🟢 **${user}** is LIVE! https://kick.com/${user}`);
-                liveStreamers.add(user);
-            }
-        } else {
-            liveStreamers.delete(user);
+        if (live && !seenLive.has(user)) {
+            seenLive.add(user);
+            await sendDiscord(`<@&1521689981939089449> 🟢 **${user}** is LIVE! https://kick.com/${user}`);
+        } else if (!live) {
+            seenLive.delete(user);
         }
-        await new Promise(r => setTimeout(r, 1500));
     }
 }
 
-// Send test message immediately + start monitoring
-sendDiscord("✅ **Kick notifier started and running**");
 monitor();
 setInterval(monitor, CONFIG.checkInterval * 1000);
