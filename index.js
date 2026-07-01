@@ -1,57 +1,84 @@
-const axios = require('axios');
+const https = require('https');
 const http = require('http');
 
 const CONFIG = {
     discordWebhook: process.env.DISCORD_WEBHOOK,
-    streamers: ['maplesyrupy'],
-    checkInterval: 60
+    streamers: (process.env.STREAMERS || 'maplesyrupy').split(','),
+    checkInterval: parseInt(process.env.CHECK_INTERVAL || '30', 10)
 };
 
-http.createServer((req, res) => res.end('Bot is active')).listen(process.env.PORT || 10000);
-
-async function sendDiscord(message) {
-    if (!CONFIG.discordWebhook) return;
-    try {
-        await axios.post(CONFIG.discordWebhook, { content: message });
-    } catch (e) {
-        console.error('Discord error:', e.message);
-    }
+if (!CONFIG.discordWebhook) {
+    console.error('Missing DISCORD_WEBHOOK environment variable');
+    process.exit(1);
 }
 
-const seenLive = new Set();
+let liveStreamers = new Set();
+
+http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('Bot is running');
+}).listen(process.env.PORT || 10000);
+
+async function sendDiscord(message) {
+    return new Promise((resolve) => {
+        const url = new URL(CONFIG.discordWebhook);
+        const data = JSON.stringify({ content: message });
+        const req = https.request({
+            hostname: url.hostname,
+            path: url.pathname,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(data)
+            }
+        }, (res) => resolve());
+        req.on('error', () => resolve());
+        req.write(data);
+        req.end();
+    });
+}
 
 async function checkKick(username) {
-    try {
-        const response = await axios.get(`https://kick.com/api/v2/channels/${username}`, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Referer': `https://kick.com/${username}`,
-                'Origin': 'https://kick.com',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            timeout: 10000
+    return new Promise((resolve) => {
+        const options = {
+            hostname: 'kick.com',
+            path: `/api/v2/channels/${username}`,
+            method: 'GET',
+            headers: { 'User-Agent': 'Mozilla/5.0' }
+        };
+        const req = https.request(options, (res) => {
+            let body = '';
+            res.on('data', (c) => body += c);
+            res.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const isLive = !!data.livestream?.is_live;
+                    resolve(isLive);
+                } catch {
+                    resolve(false);
+                }
+            });
         });
-        return response.data?.livestream?.is_live || false;
-    } catch (e) {
-        console.error(`Error checking ${username}: ${e.response?.status || e.message}`);
-        return false;
-    }
+        req.on('error', () => resolve(false));
+        req.end();
+    });
 }
 
 async function monitor() {
     for (const user of CONFIG.streamers) {
         const live = await checkKick(user);
-        
-        if (live && !seenLive.has(user)) {
-            seenLive.add(user);
-            await sendDiscord(`<@&1521689981939089449> 🟢 **${user}** is LIVE! https://kick.com/${user}`);
-        } else if (!live) {
-            seenLive.delete(user);
+        if (live) {
+            if (!liveStreamers.has(user)) {
+                await sendDiscord(`🟢 **${user}** is LIVE! https://kick.com/${user}`);
+                liveStreamers.add(user);
+            }
+        } else {
+            liveStreamers.delete(user);
         }
+        await new Promise(r => setTimeout(r, 1500));
     }
 }
 
-console.log("Monitor started...");
+sendDiscord("✅ **Kick notifier started**");
 monitor();
 setInterval(monitor, CONFIG.checkInterval * 1000);
