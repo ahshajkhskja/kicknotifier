@@ -1,64 +1,41 @@
-const https = require('https');
+const axios = require('axios');
+const { wrapper } = require('axios-cookiejar-support');
+const { CookieJar } = require('tough-cookie');
 const http = require('http');
 
+const client = wrapper(axios.create({ jar: new CookieJar() }));
+
 const CONFIG = {
-    discordWebhook: 'https://discord.com/api/webhooks/1521688375160078418/_3L6Tb_9wzs2hZxf3gRoAGBaHyYLQrTng6fD2tyR6l8SMsSv5C2BZKuAJnmKXP47jmcR',
+    discordWebhook: process.env.DISCORD_WEBHOOK || 'YOUR_WEBHOOK_URL_HERE',
     streamers: ['maplesyrupy'],
-    checkInterval: 60 
+    checkInterval: 60
 };
 
-http.createServer((req, res) => {
-    res.writeHead(200);
-    res.end('Bot is running');
-}).listen(process.env.PORT || 10000);
+http.createServer((req, res) => res.end('OK')).listen(process.env.PORT || 10000);
 
 async function sendDiscord(message) {
-    return new Promise((resolve) => {
-        const url = new URL(CONFIG.discordWebhook);
-        const data = JSON.stringify({ content: message });
-        const req = https.request({
-            hostname: url.hostname,
-            path: url.pathname,
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(data)
-            }
-        }, () => resolve());
-        req.on('error', () => resolve());
-        req.write(data);
-        req.end();
-    });
+    try {
+        await axios.post(CONFIG.discordWebhook, { content: message });
+    } catch (e) {
+        console.error('Discord error:', e.message);
+    }
 }
 
 const seenLive = new Set();
 
 async function checkKick(username) {
-    return new Promise((resolve) => {
-        const options = {
-            hostname: 'kick.com',
-            path: `/api/v2/channels/${username}`,
-            method: 'GET',
-            headers: { 
+    try {
+        const response = await client.get(`https://kick.com/api/v2/channels/${username}`, {
+            headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'application/json'
             }
-        };
-        const req = https.request(options, (res) => {
-            let body = '';
-            res.on('data', (c) => body += c);
-            res.on('end', () => {
-                try {
-                    const data = JSON.parse(body);
-                    resolve(data?.data?.livestream?.is_live ?? false);
-                } catch {
-                    resolve(false);
-                }
-            });
         });
-        req.on('error', () => resolve(false));
-        req.end();
-    });
+        return response.data?.livestream?.is_live || false;
+    } catch (e) {
+        console.log(`Error checking ${username}: ${e.message}`);
+        return false;
+    }
 }
 
 async function monitor() {
