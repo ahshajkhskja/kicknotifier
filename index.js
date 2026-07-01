@@ -64,7 +64,7 @@ async function monitor() {
         const live = await checkKick(user);
         if (live) {
             if (!liveStreamers.has(user)) {
-                await sendDiscord(`🟢 **${user}** is LIVE! https://kick.com/${user}`);
+                await sendDiscord(`<@&1521689981939089449> 🟢 **${user}** is LIVE! https://kick.com/${user}`);
                 liveStreamers.add(user);
             }
         } else {
