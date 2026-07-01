@@ -6,7 +6,7 @@ const http = require('http');
 const client = wrapper(axios.create({ jar: new CookieJar() }));
 
 const CONFIG = {
-    discordWebhook: process.env.DISCORD_WEBHOOK || 'YOUR_WEBHOOK_URL_HERE',
+    discordWebhook: process.env.DISCORD_WEBHOOK || 'https://discord.com/api/webhooks/1521688375160078418/_3L6Tb_9wzs2hZxf3gRoAGBaHyYLQrTng6fD2tyR6l8SMsSv5C2BZKuAJnmKXP47jmcR',
     streamers: ['maplesyrupy'],
     checkInterval: 60
 };
